@@ -36,6 +36,7 @@ type Queue interface {
 	AddBatchConsumer(tag string, batchSize int, consumer BatchConsumer) string
 	PurgeReady() bool
 	PurgeRejected() bool
+	ReceiveBatch(batchSize int, waitTime time.Duration) ([]Delivery, error)
 	ReturnRejected(count int) int
 	ReturnAllRejected() int
 	Close() bool
@@ -344,6 +345,39 @@ func (queue *redisQueue) consumeBatch(batchSize int) bool {
 
 	// debug(fmt.Sprintf("rmq queue consumed batch %s %d", queue, batchSize)) // COMMENTOUT
 	return true
+}
+
+// ReceiveBatch tries to read batchSize deliveries, returns true if any and all were received
+func (queue *redisQueue) ReceiveBatch(batchSize int, waitTime time.Duration) ([]Delivery, error) {
+	if batchSize == 0 {
+		return nil, nil
+	}
+
+	currentTime := time.Now()
+	waitUntil := currentTime.Add(waitTime)
+	timeRemainingSeconds := int64(waitTime.Seconds())
+
+	var delivery Delivery
+	var batch []Delivery
+	for len(batch) < batchSize {
+		result := queue.redisClient.BRPopLPush(queue.readyKey, queue.unackedKey, timeRemainingSeconds)
+		currentTime = time.Now()
+		// redisErrIsNil may panic because the transport may reuse connections unexpectedly.
+		// instead, perform check in-line and don't panic if Redis has the problem.
+		if err := result.Err(); err != nil {
+			return batch, err
+		}
+		delivery = newDelivery(result.Val(), queue.unackedKey, queue.rejectedKey, queue.pushKey, queue.redisClient)
+		batch = append(batch, delivery)
+
+		timeRemainingSeconds = int64(waitUntil.Sub(currentTime).Seconds())
+		if timeRemainingSeconds <= 0 {
+			break
+		}
+	}
+
+	debug(fmt.Sprintf("rmq queue received batch %s num %d", queue, len(batch))) // COMMENTOUT
+	return batch, nil
 }
 
 func (queue *redisQueue) consumerConsume(consumer Consumer) {

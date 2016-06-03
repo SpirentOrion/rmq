@@ -45,6 +45,10 @@ func (queue *TestQueue) AddBatchConsumer(tag string, batchSize int, consumer Bat
 	return ""
 }
 
+func (queue *TestQueue) ReceiveBatch(batchSize int, waitTime time.Duration) ([]Delivery, error) {
+	return nil, nil
+}
+
 func (queue *TestQueue) ReturnRejected(count int) int {
 	return 0
 }
