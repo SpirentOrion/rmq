@@ -365,6 +365,10 @@ func (queue *redisQueue) ReceiveBatch(batchSize int, waitTime time.Duration) ([]
 		// redisErrIsNil may panic because the transport may reuse connections unexpectedly.
 		// instead, perform check in-line and don't panic if Redis has the problem.
 		if err := result.Err(); err != nil {
+			// Filter these two errors out to reduce log cruft.
+			if err == redis.Nil || strings.Contains(err.Error(), "i/o timeout") {
+				return batch, nil
+			}
 			return batch, err
 		}
 		delivery = newDelivery(result.Val(), queue.unackedKey, queue.rejectedKey, queue.pushKey, queue.redisClient)
