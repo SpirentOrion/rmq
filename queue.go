@@ -3,6 +3,7 @@ package rmq
 import (
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"time"
 
@@ -365,6 +366,10 @@ func (queue *redisQueue) ReceiveBatch(batchSize int, waitTime time.Duration) ([]
 		// redisErrIsNil may panic because the transport may reuse connections unexpectedly.
 		// instead, perform check in-line and don't panic if Redis has the problem.
 		if err := result.Err(); err != nil {
+			// Filter these two errors out as they are related to the connection reset issue
+			if e, ok := err.(net.Error); (ok && e.Timeout()) || err == redis.Nil {
+				return batch, nil
+			}
 			return batch, err
 		}
 		delivery = newDelivery(result.Val(), queue.unackedKey, queue.rejectedKey, queue.pushKey, queue.redisClient)
